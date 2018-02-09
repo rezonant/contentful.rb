@@ -40,7 +40,7 @@ module Contentful
       @depth = depth
       @endpoint = endpoint
       @configuration = configuration
-      @entries = configuration[:_entries_cache] || {}
+      @resource_store = configuration[:_resource_store] || {}
     end
 
     # Starts the parsing process.
@@ -69,30 +69,14 @@ module Contentful
       build_item(json, includes)
     end
 
-    def build_item(item, includes = [])
+    def build_item(item, resource_store = nil)
       buildables = %w(Entry Asset ContentType Space DeletedEntry DeletedAsset)
       item_type = buildables.detect { |b| b.to_s == item['sys']['type'] }
       fail UnparsableResource, 'Item type is not known, could not parse' if item_type.nil?
       item_class = resource_class(item)
 
-      reuse_entries = @configuration.fetch(:reuse_entries, true)
-      entries = @entries ? @entries : {}
-
-      if reuse_entries
-        id = "#{item['sys']['type']}:#{item['sys']['id']}"
-        if !entries.key?(id)
-          entry = item_class.new(item, @configuration, localized?, 'skip', depth)
-          entries[id] = entry
-          entry.hydrate(includes, entries)
-        else
-          entry = entries[id]
-        end
-      else
-        entry = item_class.new(item, @configuration, localized?, 'skip', depth)
-        entry.hydrate(includes, entries)
-      end
-
-      entry
+      resource_store = ResourceStore.new(@configuration.fetch(:reuse_entries, true)) unless resource_store 
+      resource_store.find(item) || item_class.new(item, @configuration, localized?, resource_store, depth)
     end
 
     def fetch_includes

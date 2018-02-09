@@ -15,9 +15,9 @@ module Contentful
 
     private
 
-    def coerce(field_id, value, includes, entries = {})
-      return build_nested_resource(value, includes, entries) if Support.link?(value)
-      return coerce_link_array(value, includes, entries) if Support.link_array?(value)
+    def coerce(field_id, value, resource_store)
+      return build_nested_resource(value, resource_store) if Support.link?(value)
+      return coerce_link_array(value, resource_store) if Support.link_array?(value)
 
       content_type_key = Support.snakify('contentType', @configuration[:use_camel_case])
       content_type = ContentTypeCache.cache_get(sys[:space].id, sys[content_type_key.to_sym].id)
@@ -27,13 +27,13 @@ module Contentful
         return content_type_field.coerce(value) unless content_type_field.nil?
       end
 
-      super(field_id, value, includes, entries)
+      super(field_id, value, resource_store)
     end
 
-    def coerce_link_array(value, includes, entries)
+    def coerce_link_array(value, resource_store)
       items = []
       value.each do |link|
-        items << build_nested_resource(link, includes, entries)
+        items << build_nested_resource(link, resource_store)
       end
 
       items
@@ -43,28 +43,28 @@ module Contentful
     # in case one of the included items has a reference in an upper level,
     # so we can keep the include chain for that object as well
     # Any included object after the maximum include resolution depth will be just a Link
-    def build_nested_resource(value, includes, entries)
+    def build_nested_resource(value, resource_store)
       if @depth < @configuration.fetch(:max_include_resolution_depth, 20)
-        resource = Support.resource_for_link(value, includes)
-        return resolve_include(resource, includes, entries) unless resource.nil?
+        resource = Support.resource_for_link(value, resource_store)
+        return resolve_include(resource, resource_store) unless resource.nil?
       end
 
       build_link(value)
     end
 
-    def resolve_include(resource, includes, entries)
+    def resolve_include(resource, resource_store)
       require_relative 'resource_builder'
 
       ResourceBuilder.new(
         resource,
         @configuration.merge(
           includes_for_single:
-            @configuration.fetch(:includes_for_single, []) + includes,
-          _entries_cache: entries
+            @configuration.fetch(:includes_for_single, []) + resource_store.includes,
+          _resource_store: resource_store
         ),
         localized,
         @depth + 1,
-        includes
+        resource_store
       ).run
     end
 
